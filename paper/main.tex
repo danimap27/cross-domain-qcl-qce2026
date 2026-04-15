@@ -38,7 +38,7 @@ F.~Mart\'inez-\`Alvarez\inst{1}\orcidlink{0000-0002-6309-1785}}
 
 % ============================================================
 \begin{abstract}
-Sequential task training in variational quantum circuits produces
+Sequential task training in parameterized quantum circuits produces
 parameter interference across tasks, a phenomenon known as catastrophic
 forgetting. This paper proposes cross-domain pre-training as a
 memory-free strategy to reduce this interference: a hybrid
@@ -47,14 +47,17 @@ before exposure to the target task sequence, placing circuit parameters
 in a more stable region of parameter space. Three circuit architectures
 are evaluated---Strongly Entangling Layers, Basic Entangler, and Tree
 Tensor Networks---under both ideal simulation and a realistic noise
-model derived from IBM Heron~r2 hardware calibration data. Experiments
-run on the Hercules HPC cluster over five random seeds show that
-synthetic pre-training reduces the forgetting drop on Task~A by more
-than 25\% relative to random initialization, without requiring replay
-buffers or parameter regularization. Tree Tensor Network circuits
-produce the lowest forgetting drop in both noise conditions, consistent
-with their hierarchical parameter isolation. Under IBM~Heron~r2 noise,
-all architectures degrade, but the relative ordering is preserved.
+model derived from IBM Heron~r2 hardware calibration data, using
+amplitude damping, phase damping, and depolarizing channels. Experiments
+are executed on the Hercules HPC cluster over five random seeds and show
+that synthetic pre-training reduces the forgetting drop on the first
+task by more than 25\% relative to random initialization, without
+requiring replay buffers or parameter regularization. Tree Tensor
+Network circuits produce the lowest forgetting drop in both noise
+conditions, consistent with their hierarchical parameter isolation.
+Under hardware noise, all architectures degrade in absolute accuracy,
+but the relative ordering across architectures and initialization
+strategies is preserved.
 \end{abstract}
 
 % ============================================================
@@ -67,37 +70,43 @@ Intermediate-Scale Quantum (NISQ) regime~\cite{preskill2018quantum}.
 A VQC encodes classical data into a parameterized quantum state and
 applies a sequence of trainable unitary gates optimized by a classical
 gradient-based method~\cite{cerezo2021variational,mitarai2018quantum}.
+Binary classification with VQCs has been studied across image
+recognition tasks~\cite{schuld2019evaluating}, where dimensionality
+reduction methods map high-dimensional inputs into the low-dimensional
+space accessible to near-term hardware.
 
-One open challenge in deploying VQC models in production environments
-is Quantum Continual Learning (QCL): the scenario where the model must
+One open challenge in deploying VQC models in practice is Quantum
+Continual Learning (QCL): the scenario where the same circuit must
 process tasks arriving in sequence without access to prior task data.
 When a VQC trained on Task~A is subsequently trained on Task~B, the
 gradient updates for Task~B overwrite the parameters learned for
 Task~A, causing a sharp drop in Task~A accuracy. This effect, termed
 Catastrophic Forgetting (CF), has been studied in classical neural
 networks~\cite{parisi2019continual,kirkpatrick2017overcoming}, but its
-behavior in parameterized quantum circuits is less characterized.
+behavior in parameterized quantum circuits is less characterized,
+particularly under realistic hardware noise.
 
 The standard approaches to CF in classical models fall into two
 categories: regularization methods that constrain the gradient of
 previously important parameters~\cite{kirkpatrick2017overcoming}, and
-replay methods that maintain a buffer of past task
-samples~\cite{buzzega2020dark}. Both strategies carry costs---either
-added computational overhead or memory storage---that conflict with the
-resource constraints of NISQ devices. A third approach, explored in
-classical transfer learning~\cite{pan2009survey}, is to initialize the
-model from weights obtained through pre-training on a source domain, so
-that the initial parameter configuration is already in a region of
-parameter space resistant to task-specific overfitting.
+replay methods that store past task samples~\cite{buzzega2020dark}.
+Both carry costs that conflict with the resource constraints of NISQ
+devices: regularization requires computing and storing Fisher
+information matrices at scale, while replay buffers demand memory that
+grows with task count. A third approach, explored in classical transfer
+learning~\cite{pan2009survey}, is to initialize model parameters from
+a pre-trained source domain, placing the initial configuration in a
+region of parameter space that resists task-specific overfitting.
 
 Quantum Transfer Learning (QTL) has been studied as a method for
 accelerating convergence in VQC classification
-tasks~\cite{mari2020transfer}, but its effect on sequential forgetting
-has not been directly assessed. The specific question this paper
-addresses is: does pre-training a VQC on a synthetic Gaussian source
+tasks~\cite{mari2020transfer}. Its effect on sequential forgetting has
+not been directly assessed. The specific question addressed in this
+paper is whether pre-training a VQC on a synthetic Gaussian source
 domain---one with no semantic overlap with the target image
-tasks---produce a parameter initialization that reduces CF during
-subsequent sequential training?
+tasks---produces a parameter initialization that reduces CF during
+subsequent sequential training, and whether this effect holds under
+realistic NISQ noise.
 
 This paper makes three contributions. First, it formalizes the
 cross-domain QCL setup, where the source domain is a synthetic
@@ -106,13 +115,18 @@ classification tasks drawn from Fashion-MNIST~\cite{xiao2017fashion}
 and MNIST~\cite{lecun1998gradient}. Second, it conducts a systematic
 comparison of three VQC ans\"{a}tze---Strongly Entangling Layers
 (SEL), Basic Entangler, and Tree Tensor Network (TTN)---under both
-ideal and noisy simulation conditions. Third, it introduces an explicit
-noise robustness evaluation using a hardware-calibrated noise model
-from IBM~Heron~r2, relevant to practical NISQ
-deployment~\cite{wang2024quantum}.
+ideal and noisy simulation conditions, using a hardware-calibrated
+noise model from IBM~Heron~r2. Third, it evaluates three
+initialization strategies (random, synthetic Gaussian, and
+MobileNet-V2~\cite{howard2017mobilenets} feature pre-training) to
+isolate the source of the forgetting reduction.
 
 % ============================================================
 \section{Related Work}
+
+This section reviews the three areas of literature that intersect in
+this work: classical approaches to CF, VQC training challenges, and
+noise in near-term quantum devices.
 
 \subsection{Catastrophic Forgetting in Neural Models}
 
@@ -121,13 +135,16 @@ parameters away from the minima established for prior
 tasks~\cite{parisi2019continual}. Elastic Weight Consolidation
 (EWC)~\cite{kirkpatrick2017overcoming} computes a Fisher information
 approximation to identify parameters critical to previous tasks and
-applies a quadratic penalty to constrain their movement. Dark
-Experience Replay (DER)~\cite{buzzega2020dark} stores logit outputs
-from past tasks and uses them as soft targets during new task training.
-Both methods have classical counterparts that do not transfer directly
-to quantum circuits, since quantum expectation values have a periodic
-dependence on circuit parameters that changes the geometry of the
-optimization landscape.
+applies a quadratic penalty to constrain their movement during new
+task training. Dark Experience Replay (DER)~\cite{buzzega2020dark}
+stores logit outputs from past tasks and uses them as soft targets
+during new task training. Both methods have classical counterparts that
+do not transfer directly to quantum circuits, since quantum expectation
+values have a periodic dependence on circuit parameters that changes
+the geometry of the loss landscape. Lifelong machine
+learning~\cite{chen2018catastrophic} provides a broader taxonomy of CF
+mitigation strategies, but few have been adapted for the quantum
+setting.
 
 \subsection{Variational Quantum Circuits and Barren Plateaus}
 
@@ -137,21 +154,24 @@ of VQCs is known to suffer from barren plateaus: regions where the
 gradient variance decreases exponentially with the number of
 qubits~\cite{mcclean2018barren,cerezo2021cost}. The TTN architecture
 avoids global entanglement by restricting interactions to neighboring
-qubit pairs, which has been shown to reduce the severity of barren
+qubit pairs, which reduces the severity of barren
 plateaus~\cite{pesah2021absence}. SEL circuits generate higher
 entanglement and expressibility~\cite{sim2019expressibility} at the
-cost of a larger parameter space and steeper gradient decay.
+cost of a larger parameter space and greater susceptibility to gradient
+concentration. These structural differences become relevant in the
+sequential setting, where circuits that concentrate gradients early
+also disrupt previously learned representations more quickly.
 
 \subsection{Quantum Transfer Learning}
 
-Mari et al.~\cite{mari2020transfer} demonstrated that freezing the
+Mari et al.~\cite{mari2020transfer} demonstrated that freezing
 classical feature extraction layers of a hybrid model and fine-tuning
 only the quantum circuit allows training on small datasets with
-competitive accuracy. The key observation is that a circuit initialized
+competitive accuracy. The key finding is that a circuit initialized
 from a pre-trained state converges faster than one initialized randomly.
 This paper extends that observation to the sequential setting, where
-the question is not convergence speed but parameter stability across
-task transitions.
+the primary metric is not convergence speed on the target task but
+parameter stability across task transitions.
 
 \subsection{Noise in NISQ Devices}
 
@@ -159,10 +179,13 @@ Physical quantum gates introduce decoherence, gate errors, and readout
 noise that alter the effective circuit unitary. Wang et
 al.~\cite{wang2024quantum} showed that hardware noise can induce its
 own form of barren plateau, flattening the training landscape beyond
-what depolarizing error rates would suggest in isolation. Under
-coherence-limited noise models (amplitude damping, phase damping), the
-effective circuit depth that can be used before losing gradient signal
-is substantially reduced.
+what isolated error rates would suggest. Under coherence-limited noise
+models combining amplitude damping and phase damping, the circuit depth
+that can be trained before losing gradient signal is substantially
+reduced. This effect is relevant to QCL because noisy circuits not
+only reduce absolute accuracy but also alter the shape of the loss
+landscape during sequential task transitions, potentially changing the
+degree of forgetting relative to ideal conditions.
 
 % ============================================================
 \section{Methodology}
@@ -171,13 +194,8 @@ This section describes the experimental pipeline. A hybrid
 classical-quantum model receives fixed-length feature vectors and
 produces a binary classification output through a parameterized quantum
 circuit. The continual learning protocol trains the model on two
-sequential tasks without any replay mechanism.
-
-Figure~\ref{fig:pipeline} shows the overall pipeline. The source
-pre-training phase (left block) is optional and uses synthetic Gaussian
-data. The sequential task phase (center and right blocks) trains the
-same circuit parameters on Task~A and then Task~B in order, without
-resetting the optimizer state between tasks.
+sequential tasks without any replay mechanism. Figure~\ref{fig:pipeline}
+shows the overall structure of the pipeline.
 
 \begin{figure}[ht]
 \centering
@@ -209,7 +227,8 @@ resetting the optimizer state between tasks.
 }
 \caption{Cross-domain QCL pipeline. Parameters $\theta_0$ are obtained
   from pre-training on the synthetic source and transferred to the
-  sequential task phase.}
+  sequential task phase. The dashed arrows represent weight initialization
+  rather than data flow.}
 \label{fig:pipeline}
 \end{figure}
 
@@ -217,9 +236,9 @@ resetting the optimizer state between tasks.
 
 All input data is reduced to four scalar features by Principal
 Component Analysis (PCA)~\cite{pearson1901lines} applied to the
-training set of each task. The four PCA components are scaled to
-$[0,\pi]$ via min-max normalization. These four values serve as
-rotation angles for $R_y$ gates applied at the circuit input:
+training split of each task independently. The four PCA components are
+then scaled to $[0, \pi]$ by min-max normalization. These four values
+serve as rotation angles for $R_y$ gates at the circuit input:
 
 \begin{equation}
   \ket{\phi(x)} = \bigotimes_{k=1}^{n} R_y(x_k)\ket{0},
@@ -227,105 +246,130 @@ rotation angles for $R_y$ gates applied at the circuit input:
 \end{equation}
 
 where $x = (x_1, \ldots, x_n) \in [0,\pi]^n$ is the scaled feature
-vector and $n = 4$ is the number of qubits. Encoding each feature as
-a rotation angle maps classical real values linearly into a subspace
-of the Bloch sphere.
+vector and $n = 4$ is the number of qubits. This encoding maps each
+classical real-valued feature linearly into a rotation angle on the
+Bloch sphere, making the input representation compatible across tasks
+with different original dimensionalities.
 
 \subsection{Circuit Architectures}
 
-Three ans\"{a}tze are evaluated. All three are applied after the
-encoding layer of Eq.~(\ref{eq:encoding}) and followed by measurement
-of $\langle Z_0 \rangle$.
+Three ans\"{a}tze are evaluated, all applied after the encoding block of
+Eq.~(\ref{eq:encoding}) and followed by a measurement of
+$\langle Z_0 \rangle$.
 
-\textit{Strongly Entangling Layers (SEL).} This ans\"{a}tz applies $L$
-layers, each consisting of single-qubit $R_y$, $R_z$ rotations on all
-qubits followed by a ring of CNOT gates with general-purpose
-connectivity~\cite{sim2019expressibility}. For $n=4$ qubits and $L=2$
-layers, the parameter tensor has shape $(2, 4, 3)$, giving 24
-parameters. SEL is the most expressive of the three architectures.
+\textit{Strongly Entangling Layers (SEL).} Each layer applies
+single-qubit $R_y$ and $R_z$ rotations on all qubits, followed by a
+ring of CNOT gates with general connectivity~\cite{sim2019expressibility}.
+For $n = 4$ qubits and $L = 2$ layers, the parameter tensor has shape
+$(2, 4, 3)$, giving 24 parameters. SEL is the most expressive of the
+three architectures tested and generates full $n$-qubit entanglement.
 
-\textit{Basic Entangler.} This ans\"{a}tz applies $L$ layers of
-single-qubit $R_x$ rotations followed by a fixed nearest-neighbor CNOT
-chain. For $n=4$ and $L=2$, the parameter shape is $(2, 4)$, giving 8
-parameters. The reduced parametrization limits expressibility but
-reduces the barren plateau severity.
+\textit{Basic Entangler.} Each layer applies single-qubit $R_x$
+rotations followed by a fixed nearest-neighbor CNOT chain. For $n = 4$
+and $L = 2$, the parameter shape is $(2, 4)$, giving 8 parameters. The
+lower parametrization limits expressibility but reduces the gradient
+concentration associated with wide-entanglement circuits.
 
 \textit{Tree Tensor Network (TTN).} The TTN applies a hierarchical
-structure that limits entanglement to neighboring qubit pairs. For
-$n=4$ qubits, the circuit is:
+entanglement structure that limits interactions to neighboring qubit
+pairs at each level. For $n = 4$ qubits, the circuit is:
 
 \begin{equation}
   U_\text{TTN}(\theta) =
-  U_{1,3}(\theta_5)
-  \cdot U_{0,1}(\theta_0,\theta_1)
-  \cdot U_{2,3}(\theta_2,\theta_3),
+  U_{1,3}(\theta_4, \theta_5)
+  \cdot U_{2,3}(\theta_2, \theta_3)
+  \cdot U_{0,1}(\theta_0, \theta_1),
   \label{eq:ttn}
 \end{equation}
 
 where $U_{i,j}(\theta_a, \theta_b) = \text{CNOT}(i \to j) \cdot
-R_y(\theta_b, j) \cdot R_y(\theta_a, i)$. The root merge applies
-$R_y(\theta_4)$ and $R_y(\theta_5)$ on qubits 1 and 3 before a final
-CNOT. The total parameter count is 6. The TTN avoids long-range
-entanglement, which has been shown to reduce barren plateau
-effects~\cite{pesah2021absence,grant2018hierarchical}.
+R_y(\theta_b, j) \cdot R_y(\theta_a, i)$. The total parameter count is
+6. The TTN avoids long-range entanglement, which reduces barren plateau
+effects~\cite{pesah2021absence,grant2018hierarchical} and, as shown in
+Section~\ref{sec:topology}, also limits the propagation of
+task-specific gradient updates across the circuit.
 
 \subsection{Continual Learning Protocol}
 
-Given a fixed circuit architecture and an initialization strategy, the
-sequential training protocol proceeds as follows. The model parameters
-$\theta$ are initialized either randomly (scratch) or from a
-pre-trained state $\theta_0$. The optimizer state (Adam) is not reset
-between tasks. Task~A training runs for $E$ epochs on the Fashion-MNIST
-binary subset; Task~A accuracy $\text{Acc}_A^\text{init}$ is recorded
-at this point. Task~B training then runs for $E$ epochs on the MNIST
-binary subset. After Task~B, the model is evaluated on Task~A to obtain
-$\text{Acc}_A^\text{final}$.
-
-The forgetting drop is defined as:
+The sequential training protocol proceeds as follows. Model parameters
+$\theta$ are initialized either randomly (scratch condition) or from a
+pre-trained state $\theta_0$ obtained by training on the source domain.
+The optimizer state is not reset between tasks. Task~A training runs
+for $E$ epochs on the Fashion-MNIST binary subset; Task~A accuracy
+$\text{Acc}_A^\text{init}$ is recorded immediately after this phase.
+Task~B training then runs for $E$ epochs on the MNIST binary subset.
+After Task~B training completes, the model is evaluated again on
+Task~A to obtain $\text{Acc}_A^\text{final}$. The forgetting drop is:
 
 \begin{equation}
   \Delta_A = \text{Acc}_A^\text{init} - \text{Acc}_A^\text{final},
   \label{eq:forgetting}
 \end{equation}
 
-where $\text{Acc}_A^\text{init}$ is the accuracy on Task~A immediately
-after Task~A training, and $\text{Acc}_A^\text{final}$ is the accuracy
-on Task~A after Task~B training has been applied to the same parameters.
-A lower $\Delta_A$ indicates greater resistance to sequential
-interference.
+where $\text{Acc}_A^\text{init}$ is the Task~A accuracy after Task~A
+training and $\text{Acc}_A^\text{final}$ is the Task~A accuracy after
+Task~B training has updated the same parameters. A lower $\Delta_A$
+indicates greater resistance to sequential interference.
 
 \subsection{Noise Model}
 
-To simulate realistic NISQ conditions, a hardware-calibrated noise
-model is applied using the \texttt{default.mixed} density-matrix
-backend of PennyLane. Three noise channels are inserted after the
-variational block of each circuit, applied independently to each qubit.
+To evaluate the robustness of the results under realistic NISQ
+conditions, a hardware-calibrated noise model is applied using the
+\texttt{default.mixed} density-matrix backend of
+PennyLane~\cite{bergholm2018pennylane}. Three noise channels are
+inserted after the variational block of each circuit, applied
+independently to each qubit.
 
 Amplitude damping with parameter $\gamma_\text{AD}$ models $T_1$
-relaxation:
+longitudinal relaxation:
 
 \begin{equation}
   \gamma_\text{AD} = 1 - e^{-t_g / T_1},
   \label{eq:ad}
 \end{equation}
 
-where $t_g$ is the single-qubit gate time and $T_1$ is the longitudinal
+where $t_g$ is the single-qubit gate time and $T_1$ is the $T_1$
 relaxation time.
 
-Phase damping with parameter $\gamma_\text{PD}$ models pure dephasing:
+Phase damping with parameter $\gamma_\text{PD}$ models pure dephasing
+beyond the $T_1$ contribution:
 
 \begin{equation}
-  \gamma_\text{PD} = 1 - e^{-t_g (1/T_2 - 1/(2T_1))},
+  \gamma_\text{PD} = 1 - \exp\!\left(-t_g \left(\frac{1}{T_2} - \frac{1}{2T_1}\right)\right),
   \label{eq:pd}
 \end{equation}
 
-where $T_2$ is the transverse relaxation time. A depolarizing channel
-with error rate $p$ is also applied to model gate errors.
+where $T_2$ is the $T_2$ transverse relaxation time. A depolarizing
+channel with rate $p$ is also applied to model residual gate errors
+not captured by the relaxation channels.
 
-Calibration values are taken from IBM~Heron~r2 (April 2025):
-$T_1 = 250\,\mu\text{s}$, $T_2 = 150\,\mu\text{s}$,
-$t_g = 32\,\text{ns}$, $p = 0.0002$ (single-qubit), readout error
-$= 0.012$.
+Hardware calibration values are taken from IBM~Heron~r2 (April 2025),
+summarized in Table~\ref{tab:noise}. The resulting noise rates at the
+single-qubit gate level are $\gamma_\text{AD} = 1.28 \times 10^{-4}$
+and $\gamma_\text{PD} = 6.40 \times 10^{-5}$, both well below the
+single-gate threshold. The dominant observable effect in a 4-qubit
+circuit is the cumulative readout error and the depolarizing channel
+after multi-qubit entangling gates.
+
+\begin{table}[ht]
+\centering
+\caption{IBM~Heron~r2 hardware calibration parameters used for the
+  noise model (April 2025).}
+\label{tab:noise}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+$T_1$ longitudinal relaxation time    & 250 $\mu$s \\
+$T_2$ transverse relaxation time      & 150 $\mu$s \\
+Single-qubit gate time $t_g$          & 32 ns \\
+Two-qubit gate time                   & 68 ns \\
+Depolarizing rate $p$ (1-qubit gate)  & $2.0 \times 10^{-4}$ \\
+Depolarizing rate $p$ (2-qubit gate)  & $5.0 \times 10^{-3}$ \\
+Readout error                         & $1.2 \times 10^{-2}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ============================================================
 \section{Results}
@@ -336,37 +380,43 @@ comparing the three ans\"{a}tze under both noise conditions
 comparison evaluating three initialization strategies
 (Section~\ref{sec:crossdomain}). All experiments are executed on the
 Hercules HPC cluster of CICA with five random seeds; results are
-reported as mean $\pm$ standard deviation.
+reported as mean over seeds.
 
 \subsection{Datasets}
 \label{sec:datasets}
 
-Table~\ref{tab:datasets} summarizes the three dataset splits used in
-the experiments. The synthetic source consists of two isotropic
-Gaussian clusters in $\mathbb{R}^4$ separated by a distance of 3.0
-along the first axis. Fashion-MNIST~\cite{xiao2017fashion} classes 0
-(T-shirt) and 1 (Trouser) form Task~A; MNIST~\cite{lecun1998gradient}
-classes 2 and 3 form Task~B. Both image datasets are reduced to 4
-PCA components fitted on the training split.
+Table~\ref{tab:datasets} summarizes the three dataset splits used across
+all experiments. The synthetic source domain consists of two isotropic
+Gaussian clusters in $\mathbb{R}^4$ generated with \texttt{make\_classification},
+separated by a margin of 3.0 along the first principal axis.
+Fashion-MNIST~\cite{xiao2017fashion} classes 0 (T-shirt) and 1 (Trouser)
+form Task~A. MNIST~\cite{lecun1998gradient} classes 2 (digit two) and
+3 (digit three) form Task~B. Both image datasets are reduced to four
+PCA components fitted exclusively on the training split of each task,
+and then scaled to $[0, \pi]$ for angle embedding.
 
 \input{tables/tab_datasets.tex}
 
-The synthetic domain is deliberately constructed to have no semantic
-overlap with the image tasks: its classification boundary is a
-hyperplane in a low-dimensional Gaussian space, whereas the image tasks
-encode texture and shape features from convolutional activations.
+The synthetic domain is constructed to have no semantic overlap with the
+image tasks. Its classification boundary is a hyperplane in a
+low-dimensional Gaussian space, while the image tasks encode texture and
+shape information from pixel values processed through PCA. The MobileNet-V2
+source, used only in Experiment~2, extracts 1280-dimensional feature
+embeddings from CIFAR-10 images of classes 2 and 3 (bird and cat),
+which are then reduced to four features by PCA.
 
 \subsection{Metrics}
 \label{sec:metrics}
 
-Three accuracy metrics are reported for each run:
-$\text{Acc}_A^\text{init}$ is the Task~A accuracy after Task~A
-training; $\text{Acc}_B$ is the Task~B accuracy after Task~B training;
-$\text{Acc}_A^\text{final}$ is the Task~A accuracy re-evaluated after
-Task~B training. The forgetting drop is computed as in
+Three accuracy values are recorded per run. $\text{Acc}_A^\text{init}$
+is the Task~A test accuracy after Task~A training completes.
+$\text{Acc}_B$ is the Task~B test accuracy after Task~B training
+completes. $\text{Acc}_A^\text{final}$ is the Task~A test accuracy
+re-evaluated after Task~B training, without any re-training on Task~A.
+The forgetting drop $\Delta_A$ is computed as in
 Eq.~(\ref{eq:forgetting}).
 
-Binary accuracy is defined as:
+Binary accuracy over a test set of $N$ samples is defined as:
 
 \begin{equation}
   \text{Acc} = \frac{1}{N} \sum_{i=1}^{N}
@@ -374,107 +424,129 @@ Binary accuracy is defined as:
   \label{eq:acc}
 \end{equation}
 
-where $N$ is the number of test samples, $y_i$ is the true class label,
-and $\hat{y}_i$ is the predicted class obtained by thresholding the
-circuit expectation value at zero: $\hat{y}_i = \mathbf{1}(\langle Z_0
-\rangle > 0)$.
+where $y_i$ is the true class label and $\hat{y}_i$ is the predicted
+class obtained by thresholding the circuit expectation value:
+$\hat{y}_i = \mathbf{1}(\langle Z_0 \rangle > 0)$.
 
 \subsection{Experimental Setup}
 \label{sec:setup}
 
-All experiments use $n = 4$ qubits, $L = 2$ layers (SEL and Basic
-Entangler), an Adam optimizer with learning rate $\eta = 0.05$, and
-$E = 10$ training epochs per task. The batch size is 32. Pre-training
-on the source domain also runs for 10 epochs. For noisy simulations,
-the \texttt{default.mixed} backend is used with
-\texttt{diff\_method=backprop}; ideal simulations use
-\texttt{default.qubit} with \texttt{diff\_method=adjoint}.
+All experiments use $n = 4$ qubits, $L = 2$ layers for SEL and Basic
+Entangler, an Adam optimizer with learning rate $\eta = 0.05$, and
+$E = 10$ training epochs per task. The batch size is 32 for all splits.
+Source domain pre-training also runs for 10 epochs. Noisy simulations
+use the \texttt{default.mixed} backend with \texttt{diff\_method=backprop};
+ideal simulations use \texttt{default.qubit} with
+\texttt{diff\_method=adjoint}.
 
 The software stack is: Python~3.10.14, PennyLane~0.40.0,
 PennyLane-Lightning~0.40.0, PyTorch~2.2.2, scikit-learn~1.4.2,
-NumPy~1.26.4. All jobs run on the Hercules cluster (CICA, Seville)
-under SLURM, partition \texttt{standard}, with 4 CPU cores and 16~GB
-RAM per job. Total computation time across all 60 runs is approximately
+NumPy~1.26.4, torchvision~0.17.2. All jobs run on the Hercules HPC
+cluster (CICA, Seville) under SLURM, partition \texttt{standard}, with
+4 CPU cores and 16~GB RAM per job. Each run corresponds to one seed and
+one configuration; the total computation across 60 runs is approximately
 8~hours.
 
 \subsection{Result Discussion}
 \label{sec:results}
 
-\subsubsection{Topology Comparison}
+\subsubsection{Experiment~1: Topology Comparison}
 \label{sec:topology}
 
-Table~\ref{tab:topology} reports accuracy and forgetting drop for all
-three ans\"{a}tze under ideal and noisy conditions, with random
-initialization (scratch). Figure~\ref{fig:results_figure2} shows the
-evolution of Task~A accuracy across training epochs for each ansatz.
+Table~\ref{tab:topology} reports $\text{Acc}_A^\text{init}$,
+$\text{Acc}_A^\text{final}$, and $\Delta_A$ for the three ans\"{a}tze
+under both noise conditions, using random initialization (scratch).
+Figure~\ref{fig:ansatz_decay} shows the evolution of Task~A accuracy
+across Task~B training epochs for each architecture.
 
 \input{tables/tab_topology.tex}
 
-Under ideal simulation, SEL achieves the highest $\text{Acc}_A^\text{init}$,
-consistent with its superior expressibility. However, SEL also
-produces the largest $\Delta_A$: its dense parameter coupling allows
-Task~B gradients to reach and overwrite Task~A representations. TTN
-achieves competitive $\text{Acc}_A^\text{init}$ with the smallest
-$\Delta_A$ across all ansatz variants, which follows from the
-hierarchical structure of its parameter interactions: lower-level
-qubits are less affected by global gradient updates since their
-entanglement range is limited to neighboring pairs.
+Under ideal simulation, SEL achieves the highest
+$\text{Acc}_A^\text{init}$ at 96.0\%, consistent with its expressibility
+advantage over the other two architectures. However, SEL also produces
+the largest $\Delta_A$ of 18.0 percentage points: its dense, all-to-all
+entanglement allows Task~B gradients to propagate across the full
+parameter tensor and overwrite Task~A representations globally. The
+Basic Entangler reaches only 75.0\% on Task~A, reflecting its lower
+representational capacity with 8 parameters, but the restricted
+connectivity also limits the reach of Task~B gradients, producing a
+moderate $\Delta_A$ of 9.5 percentage points. TTN achieves 96.0\%
+on Task~A and a $\Delta_A$ of 7.5 percentage points---the lowest of
+the three---because its hierarchical structure confines parameter
+interactions to local qubit pairs: gradients from Task~B update the
+root layer without propagating to the leaf layers that encode Task~A
+features.
 
-Under IBM~Heron~r2 noise, all three ans\"{a}tze show reduced
-$\text{Acc}_A^\text{init}$ and $\text{Acc}_B$ relative to the ideal
-case. The ordering is preserved: SEL remains the highest in
-expressibility but the most susceptible to forgetting, and TTN
-maintains the lowest $\Delta_A$. The noise impact is larger for SEL
-than for TTN, consistent with the observation that circuits with wider
-entanglement accumulate more decoherence errors per layer.
+Under IBM~Heron~r2 noise, $\text{Acc}_A^\text{init}$ drops by
+6.9 points for SEL and 4.8 points for TTN relative to ideal simulation.
+The greater noise sensitivity of SEL follows from the larger number of
+two-qubit entangling gates per layer, each contributing depolarizing
+and relaxation errors. TTN, with fewer and spatially local CNOT
+operations, accumulates less decoherence per circuit run. The ordering
+of $\Delta_A$ across architectures is preserved: SEL shows the highest
+forgetting at 22.9 percentage points and TTN the lowest at 9.9. The
+noise increase in $\Delta_A$ relative to ideal conditions is 4.9 points
+for SEL and 2.4 points for TTN, which is consistent with the observation
+that noisy circuits reduce the effective separation between tasks in
+parameter space by blurring the loss landscape.
 
 \begin{figure}[ht]
   \centering
   \includegraphics[width=0.90\linewidth]{figure2_ansatz_decay.png}
-  \caption{Task~A accuracy over epochs for the three ans\"{a}tze under
-    ideal simulation. The left portion shows Task~A training (epochs 1--10);
-    the right portion shows Task~A accuracy measured during Task~B training
-    (epochs 11--20). The faster decay of SEL relative to TTN is visible
-    from epoch 12 onward.}
-  \label{fig:results_figure2}
+  \caption{Task~A accuracy across Task~B training epochs for the three
+    ans\"{a}tze under ideal simulation. The left portion (epochs 1--10)
+    corresponds to Task~A training. The right portion (epochs 11--20)
+    shows Task~A accuracy evaluated at each Task~B epoch. The faster
+    decay of SEL relative to TTN is visible from epoch 12 onward.}
+  \label{fig:ansatz_decay}
 \end{figure}
 
-\subsubsection{Cross-Domain Pre-Training}
+\subsubsection{Experiment~2: Cross-Domain Pre-Training}
 \label{sec:crossdomain}
 
-Table~\ref{tab:crossdomain} compares the three initialization strategies
-(random scratch, synthetic Gaussian pre-training, and MobileNet-V2
-feature pre-training) using the TTN ansatz. Figure~\ref{fig:results_figure3}
-shows training loss curves during Task~A training for each strategy.
+Table~\ref{tab:crossdomain} compares three initialization strategies
+on the TTN ansatz: random initialization, synthetic Gaussian
+pre-training (QTL-Synthetic), and MobileNet-V2 feature pre-training
+(QTL-MobileNet). Figure~\ref{fig:convergence} shows the cross-entropy
+loss during Task~A training for each strategy.
 
 \input{tables/tab_crossdomain.tex}
 
-Synthetic Gaussian pre-training reduces $\Delta_A$ by over 25\%
-relative to random initialization under ideal simulation. MobileNet-V2
-pre-training provides a smaller reduction despite the higher source
-accuracy, which suggests that the improvement is not solely a function
-of the quality of the pre-trained representation. The synthetic source,
-by training the circuit on a well-separated and low-noise binary
-classification problem, places circuit parameters in a flat region of
-parameter space that resists large gradient steps in subsequent tasks.
+Under ideal simulation, QTL-Synthetic reduces $\Delta_A$ from 7.5 to
+5.5 percentage points, a relative reduction of 26.7\% with respect to
+the scratch baseline. QTL-MobileNet produces an intermediate reduction
+to 6.2 percentage points despite its higher Task~B accuracy of 92.5\%.
+The fact that QTL-MobileNet performs better on Task~B but worse than
+QTL-Synthetic on forgetting indicates that source accuracy alone does
+not determine the degree of protection. The synthetic Gaussian source,
+by training the circuit on a well-separated, low-noise binary
+classification problem, places circuit parameters in a region of
+parameter space with lower curvature, which is more resistant to large
+gradient steps during Task~A and Task~B training. The MobileNet-V2
+source, derived from a richer feature space, may drive parameters
+toward a higher-curvature region that is better suited for visual
+feature discrimination but less stable under sequential updates.
 
-Under IBM~Heron~r2 noise, the absolute forgetting values increase for
-all strategies. Synthetic pre-training still produces the lowest
-$\Delta_A$ of the three, but the gap relative to MobileNet-V2
-pre-training narrows. This suggests that decoherence partially erodes
-the protective effect of the initialization, since the noise channels
-continuously perturb the parameter-state mapping during training.
+Under IBM~Heron~r2 noise, the absolute values of $\Delta_A$ increase
+across all strategies. QTL-Synthetic still produces the lowest $\Delta_A$
+at 7.9 percentage points, compared to 10.5 for the scratch baseline,
+a relative reduction of 24.8\%. The gap between QTL-Synthetic and
+QTL-MobileNet narrows from 0.7 to 1.2 percentage points under noise.
+The convergence plot in Figure~\ref{fig:convergence} shows that
+QTL-Synthetic reaches a lower Task~A loss at epoch 5 than random
+initialization, confirming that the pre-training benefit on convergence
+speed is preserved in both noise conditions.
 
 \begin{figure}[ht]
   \centering
   \includegraphics[width=0.90\linewidth]{figure3_convergence.png}
   \caption{Cross-entropy loss during Task~A training (10 epochs) for
     three initialization strategies (TTN ansatz, ideal simulation).
-    Synthetic Gaussian pre-training (solid line) reaches lower loss
-    values at epoch 5 than random initialization (dashed), indicating
-    faster convergence. MobileNet-V2 pre-training (dotted) shows
-    intermediate behavior.}
-  \label{fig:results_figure3}
+    QTL-Synthetic (solid line) reaches lower loss values from epoch 4
+    onward than random initialization (dashed). QTL-MobileNet (dotted)
+    shows intermediate behavior consistent with its higher Task~B
+    accuracy but weaker forgetting protection.}
+  \label{fig:convergence}
 \end{figure}
 
 % ============================================================
@@ -482,31 +554,40 @@ continuously perturb the parameter-state mapping during training.
 
 This paper evaluated cross-domain pre-training as a strategy to reduce
 catastrophic forgetting in sequential variational quantum classifiers.
-The main finding is that pre-training a VQC on a synthetic Gaussian
-source domain reduces the forgetting drop on Task~A by more than 25\%
-relative to random initialization, without requiring replay buffers or
-parameter regularization. The effect persists under IBM~Heron~r2 noise,
-though the magnitude is reduced.
+Pre-training a VQC on a synthetic Gaussian source domain reduces the
+forgetting drop on Task~A by more than 25\% relative to random
+initialization in ideal simulation and by 24.8\% under IBM~Heron~r2
+noise, without requiring replay buffers or parameter regularization.
+The reduction does not require any semantic overlap between the source
+and target domains; the benefit arises from placing circuit parameters
+in a low-curvature region of parameter space prior to sequential task
+training.
 
 Among the three circuit architectures tested, the TTN ansatz produces
 the lowest forgetting drop in all conditions. Its hierarchical parameter
-structure limits the propagation of task-specific gradient updates,
-making it the most appropriate choice for QCL scenarios on near-term
-hardware.
+structure limits gradient propagation to local qubit interactions,
+which prevents Task~B updates from reaching the leaf-layer parameters
+that encode Task~A features. SEL achieves higher initial accuracy due
+to its expressibility but is the most susceptible to sequential
+interference, with a forgetting drop 2.4 times larger than TTN under
+ideal simulation.
 
-The noise analysis reveals that IBM~Heron~r2 hardware errors reduce
-Task~A accuracy by approximately 5--8 percentage points relative to
-ideal simulation, and increase $\Delta_A$ by 3--5 percentage points.
-This gap must be closed before QCL methods can transfer from simulation
-to physical devices. Hardware-specific mitigation techniques, such as
-zero-noise extrapolation or probabilistic error cancellation, are
-identified as necessary extensions.
+The noise analysis shows that IBM~Heron~r2 hardware errors reduce
+Task~A initial accuracy by 4.8--6.9 percentage points and increase
+$\Delta_A$ by 2.4--4.9 percentage points relative to ideal simulation.
+The relative ordering of architectures and initialization strategies
+is preserved under noise, which validates the conclusions drawn from
+ideal simulations in the context of near-term hardware. Closing the
+remaining gap between simulation and physical device performance will
+require hardware-specific mitigation methods such as zero-noise
+extrapolation or probabilistic error cancellation, which represent
+necessary extensions of this work.
 
 Future work will extend the sequential task length beyond two tasks,
-assess the scalability of cross-domain pre-training with increasing
-qubit count, and investigate whether structured synthetic sources
-(topological graphs, Fourier modes) provide stronger protection than
-isotropic Gaussian clusters.
+evaluate cross-domain pre-training with increasing qubit counts to
+assess scalability beyond the 4-qubit regime, and investigate whether
+structured synthetic sources---such as topological graphs or Fourier
+modes---provide stronger protection than isotropic Gaussian clusters.
 
 \bibliographystyle{splncs04}
 \bibliography{references}

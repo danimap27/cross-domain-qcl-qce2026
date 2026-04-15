@@ -1,0 +1,20 @@
+\begin{table}[ht]
+\centering
+\caption{Experiment~2: Forgetting drop $\Delta_A$ and Task~B accuracy for three initialization
+  strategies on the TTN ansatz, under ideal simulation and IBM~Heron~r2 noise.
+  All values are averaged over five seeds.}
+\label{tab:crossdomain}
+\begin{tabular}{lcccc}
+\toprule
+\multirow{2}{*}{\textbf{Initialization}} &
+\multicolumn{2}{c}{\textbf{Ideal simulation}} &
+\multicolumn{2}{c}{\textbf{IBM Heron~r2 noise}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+& $\text{Acc}_B$ (\%) & $\Delta_A$ (\%) & $\text{Acc}_B$ (\%) & $\Delta_A$ (\%) \\
+\midrule
+Random (scratch)         & 90.5 & 7.5 & 85.8 & 10.5 \\
+Synthetic Gaussian (QTL) & 90.0 & 5.5 & 85.3 &  7.9 \\
+MobileNet-V2 (QTL)       & 92.5 & 6.2 & 87.9 &  9.1 \\
+\bottomrule
+\end{tabular}
+\end{table}

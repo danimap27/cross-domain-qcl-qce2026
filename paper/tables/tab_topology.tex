@@ -1,0 +1,24 @@
+\begin{table}[ht]
+\centering
+\caption{Experiment~1: Task~A accuracy before and after Task~B training for three ans\"{a}tze,
+  under ideal simulation and IBM~Heron~r2 noise. $\text{Acc}_A^\text{init}$ is measured after
+  Task~A training. $\text{Acc}_A^\text{final}$ and $\Delta_A$ are measured after Task~B training.
+  All values are averaged over five seeds.}
+\label{tab:topology}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+\multirow{2}{*}{\textbf{Ans\"{a}tz}} &
+\multicolumn{3}{c}{\textbf{Ideal simulation}} &
+\multicolumn{3}{c}{\textbf{IBM Heron~r2 noise}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+& $\text{Acc}_A^\text{init}$ (\%) & $\text{Acc}_A^\text{final}$ (\%) & $\Delta_A$ (\%) &
+  $\text{Acc}_A^\text{init}$ (\%) & $\text{Acc}_A^\text{final}$ (\%) & $\Delta_A$ (\%) \\
+\midrule
+Strongly Entangling (SEL) & 96.0 & 78.0 & 18.0 & 89.1 & 66.2 & 22.9 \\
+Basic Entangler            & 75.0 & 65.5 &  9.5 & 70.3 & 57.4 & 12.9 \\
+Tree Tensor Network (TTN)  & 96.0 & 88.5 &  7.5 & 91.2 & 81.3 &  9.9 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
