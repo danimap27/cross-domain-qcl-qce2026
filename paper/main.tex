@@ -84,7 +84,7 @@ Task~A, causing a sharp drop in Task~A accuracy. This effect, termed
 Catastrophic Forgetting (CF), has been studied in classical neural
 networks~\cite{parisi2019continual,kirkpatrick2017overcoming}, but its
 behavior in parameterized quantum circuits is less characterized,
-particularly under realistic hardware noise.
+and its interaction with hardware noise has not been studied.
 
 The standard approaches to CF in classical models fall into two
 categories: regularization methods that constrain the gradient of
@@ -101,11 +101,11 @@ region of parameter space that resists task-specific overfitting.
 Quantum Transfer Learning (QTL) has been studied as a method for
 accelerating convergence in VQC classification
 tasks~\cite{mari2020transfer}. Its effect on sequential forgetting has
-not been directly assessed. The specific question addressed in this
+not been assessed. The specific question addressed in this
 paper is whether pre-training a VQC on a synthetic Gaussian source
 domain---one with no semantic overlap with the target image
 tasks---produces a parameter initialization that reduces CF during
-subsequent sequential training, and whether this effect holds under
+subsequent sequential training, and whether this effect persists under
 realistic NISQ noise.
 
 This paper makes three contributions. First, it formalizes the
@@ -116,7 +116,7 @@ and MNIST~\cite{lecun1998gradient}. Second, it conducts a systematic
 comparison of three VQC ans\"{a}tze---Strongly Entangling Layers
 (SEL), Basic Entangler, and Tree Tensor Network (TTN)---under both
 ideal and noisy simulation conditions, using a hardware-calibrated
-noise model from IBM~Heron~r2. Third, it evaluates three
+noise model from IBM~Heron~r2. Third, it compares three
 initialization strategies (random, synthetic Gaussian, and
 MobileNet-V2~\cite{howard2017mobilenets} feature pre-training) to
 isolate the source of the forgetting reduction.
@@ -139,10 +139,10 @@ applies a quadratic penalty to constrain their movement during new
 task training. Dark Experience Replay (DER)~\cite{buzzega2020dark}
 stores logit outputs from past tasks and uses them as soft targets
 during new task training. Both methods have classical counterparts that
-do not transfer directly to quantum circuits, since quantum expectation
-values have a periodic dependence on circuit parameters that changes
-the geometry of the loss landscape. Lifelong machine
-learning~\cite{chen2018catastrophic} provides a broader taxonomy of CF
+do not transfer to quantum circuits without modification, since quantum
+expectation values have a periodic dependence on circuit parameters that
+changes the geometry of the loss landscape. Lifelong machine
+learning~\cite{chen2018catastrophic} provides a taxonomy of CF
 mitigation strategies, but few have been adapted for the quantum
 setting.
 
@@ -181,8 +181,7 @@ al.~\cite{wang2024quantum} showed that hardware noise can induce its
 own form of barren plateau, flattening the training landscape beyond
 what isolated error rates would suggest. Under coherence-limited noise
 models combining amplitude damping and phase damping, the circuit depth
-that can be trained before losing gradient signal is substantially
-reduced. This effect is relevant to QCL because noisy circuits not
+that can be trained before losing gradient signal is reduced. This effect is relevant to QCL because noisy circuits not
 only reduce absolute accuracy but also alter the shape of the loss
 landscape during sequential task transitions, potentially changing the
 degree of forgetting relative to ideal conditions.
@@ -480,7 +479,7 @@ features.
 Under IBM~Heron~r2 noise, $\text{Acc}_A^\text{init}$ drops by
 6.9 points for SEL and 4.8 points for TTN relative to ideal simulation.
 The greater noise sensitivity of SEL follows from the larger number of
-two-qubit entangling gates per layer, each contributing depolarizing
+two-qubit entangling gates per layer, each adding depolarizing
 and relaxation errors. TTN, with fewer and spatially local CNOT
 operations, accumulates less decoherence per circuit run. The ordering
 of $\Delta_A$ across architectures is preserved: SEL shows the highest
@@ -576,8 +575,8 @@ The noise analysis shows that IBM~Heron~r2 hardware errors reduce
 Task~A initial accuracy by 4.8--6.9 percentage points and increase
 $\Delta_A$ by 2.4--4.9 percentage points relative to ideal simulation.
 The relative ordering of architectures and initialization strategies
-is preserved under noise, which validates the conclusions drawn from
-ideal simulations in the context of near-term hardware. Closing the
+is preserved under noise, which confirms that the conclusions drawn from
+ideal simulations apply in the context of near-term hardware. Closing the
 remaining gap between simulation and physical device performance will
 require hardware-specific mitigation methods such as zero-noise
 extrapolation or probabilistic error cancellation, which represent
