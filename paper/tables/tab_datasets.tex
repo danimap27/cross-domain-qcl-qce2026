@@ -1,0 +1,14 @@
+\begin{table}[ht]
+\centering
+\caption{Dataset summary. All image datasets are reduced to 4 features via PCA before encoding. Samples correspond to the binary subset used.}
+\label{tab:datasets}
+\begin{tabular}{lcccl}
+\toprule
+\textbf{Dataset} & \textbf{Train} & \textbf{Test} & \textbf{Classes} & \textbf{Role} \\
+\midrule
+Synthetic Gaussian & 1{,}000 & --- & 2 & Pre-training source \\
+Fashion-MNIST~(T-shirt/Trouser) & 12{,}000 & 2{,}000 & 2 & Task~A \\
+MNIST~(digit~2 / digit~3) & 11{,}879 & 1{,}990 & 2 & Task~B \\
+\bottomrule
+\end{tabular}
+\end{table}

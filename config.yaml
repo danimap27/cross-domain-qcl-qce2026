@@ -1,0 +1,161 @@
+# =============================================================
+# EXPERIMENT CONFIGURATION — Cross-Domain QCL
+# QUANTICS 2026, Porto
+# =============================================================
+
+experiment_name: "cross_domain_qcl"
+output_dir: "./results"
+data_dir: "./data/raw"
+
+# =============================================================
+# RANDOM SEEDS
+# =============================================================
+seeds: [0, 42, 123, 456, 789]
+
+# =============================================================
+# QUANTUM CIRCUIT SETTINGS
+# =============================================================
+n_qubits: 4
+n_layers: 2   # used by SEL and BasicEntangler
+
+ansatze:
+  - name: "strongly_entangling"
+    label: "SEL"
+  - name: "basic_entangler"
+    label: "Basic Entangler"
+  - name: "ttn"
+    label: "TTN"
+
+# =============================================================
+# NOISE MODELS
+# =============================================================
+noise_models:
+  - name: "ideal"
+    backend: "default.qubit"
+    diff_method: "adjoint"
+    enabled: false
+
+  - name: "ibm_heron_r2"
+    backend: "default.mixed"
+    diff_method: "backprop"
+    enabled: true
+    channels: ["amplitude_damping", "phase_damping", "depolarizing"]
+    params:
+      T1_us: 250.0
+      T2_us: 150.0
+      t1q_ns: 32.0
+      t2q_ns: 68.0
+      p1q: 0.0002
+      p2q: 0.005
+      readout_error: 0.012
+
+# =============================================================
+# SOURCE DOMAINS (pre-training)
+# =============================================================
+sources:
+  - name: "scratch"
+    description: "Random initialization (no pre-training)"
+
+  - name: "synthetic_gaussian"
+    description: "Isotropic Gaussian clusters (cross-domain)"
+    n_samples: 1000
+    n_features: 4
+
+  - name: "mobilenetv2"
+    description: "MobileNetV2 feature embeddings on Fashion-MNIST"
+
+# =============================================================
+# SEQUENTIAL TASKS
+# =============================================================
+tasks:
+  task_a:
+    dataset: "fashion_mnist"
+    classes: [0, 1]
+    description: "Fashion-MNIST: T-shirt vs Trouser"
+
+  task_b:
+    dataset: "mnist"
+    classes: [2, 3]
+    description: "MNIST: digit 2 vs digit 3"
+
+# =============================================================
+# TRAINING HYPERPARAMETERS
+# =============================================================
+training:
+  optimizer: "adam"
+  lr: 0.05
+  epochs: 10
+  pretrain_epochs: 10
+  batch_size: 32
+
+# =============================================================
+# SLURM PHASES (read by manager.py)
+# Each phase maps to a command file for sbatch array jobs.
+# =============================================================
+phases:
+  - id: "1"
+    name: "topology_ideal"
+    file: "cmds_1_topology_ideal.txt"
+    description: "Exp 1 — Topology comparison (ideal simulator)"
+    filters:
+      noise: "ideal"
+      source: "scratch"
+
+  - id: "2"
+    name: "topology_noisy"
+    file: "cmds_2_topology_noisy.txt"
+    description: "Exp 1 — Topology comparison (IBM Heron r2 noise)"
+    filters:
+      noise: "ibm_heron_r2"
+      source: "scratch"
+
+  - id: "3"
+    name: "crossdomain_ideal"
+    file: "cmds_3_crossdomain_ideal.txt"
+    description: "Exp 2 — Cross-domain pre-training (ideal)"
+    filters:
+      noise: "ideal"
+      ansatz: "ttn"
+
+  - id: "4"
+    name: "crossdomain_noisy"
+    file: "cmds_4_crossdomain_noisy.txt"
+    description: "Exp 2 — Cross-domain pre-training (IBM Heron r2 noise)"
+    filters:
+      noise: "ibm_heron_r2"
+      ansatz: "ttn"
+
+# Expected total runs = 5 seeds x (3 ansatze x 2 noise + 3 sources x 2 noise x 1 ansatz)
+# = 5 x (6 + 6) = 60
+expected_runs: 60
+
+# =============================================================
+# LATEX TABLE LABELS (used by generate_tables.py)
+# =============================================================
+labels:
+  ansatze:
+    strongly_entangling: "\\textsc{SEL}"
+    basic_entangler: "\\textsc{Basic}"
+    ttn: "\\textsc{TTN}"
+  noise_models:
+    ideal: "Ideal"
+    ibm_heron_r2: "IBM Heron~r2"
+  sources:
+    scratch: "Scratch"
+    synthetic_gaussian: "Synthetic Gaussian"
+    mobilenetv2: "MobileNet-V2"
+  metrics:
+    acc_a_initial: "Acc$_A^{\\text{init}}$~(\\%)"
+    acc_b_final: "Acc$_B$~(\\%)"
+    acc_a_final: "Acc$_A^{\\text{final}}$~(\\%)"
+    forgetting_drop: "$\\Delta_A$~(\\%)"
+    train_time_a_s: "Time$_A$ (s)"
+    train_time_b_s: "Time$_B$ (s)"
+
+# =============================================================
+# VISUALIZATION
+# =============================================================
+visualization:
+  enabled: true
+  plots_dir: "./results/plots"
+  dpi: 150
