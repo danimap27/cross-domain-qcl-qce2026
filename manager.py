@@ -1,18 +1,19 @@
 """
-manager.py — Generic Experiment Control Hub for Hercules HPC.
+manager.py — Experiment Control Hub for Hercules HPC.
 
-Reads phases and labels from config.yaml. Compatible with any paper
-that follows the runner.py + config.yaml + slurm_generic.sh structure.
+Reads phases and labels from config.yaml. The monitor screen [M] shows
+real-time progress with a bar that refreshes every 2 seconds until the
+user presses any key.
 
 Usage:
     python manager.py
     python manager.py --config config.yaml
 """
 
-import os
-import sys
-import subprocess
 import glob
+import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -25,9 +26,20 @@ try:
 except ImportError:
     HAS_PANDAS = False
 
+try:
+    import termios
+    import tty
+    HAS_TERMIOS = True
+except ImportError:
+    HAS_TERMIOS = False
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
 def load_config(path: str) -> dict:
-    with open(path, "r") as f:
+    with open(path) as f:
         return yaml.safe_load(f)
 
 
@@ -35,12 +47,11 @@ def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
 
-def print_header(experiment_name: str):
-    width = 70
-    print("=" * width)
-    title = f"EXPERIMENT HUB — {experiment_name.upper()}"
-    print(f"{title:^{width}}")
-    print("=" * width)
+def print_header(name: str):
+    w = 70
+    print("=" * w)
+    print(f"{'EXPERIMENT HUB — ' + name.upper():^{w}}")
+    print("=" * w)
 
 
 def run_cmd(cmd: str, capture: bool = False):
@@ -60,15 +71,169 @@ def count_lines(path: str) -> int:
         return 0
     for enc in ["utf-8-sig", "utf-16", "latin1"]:
         try:
-            with open(path, "r", encoding=enc) as f:
-                return len([l for l in f if l.strip()])
+            with open(path, encoding=enc) as f:
+                return sum(1 for l in f if l.strip())
         except (UnicodeDecodeError, UnicodeError):
             continue
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Progress helpers
+# ---------------------------------------------------------------------------
+
+def _progress_bar(done: int, total: int, width: int = 40) -> str:
+    """Return an ASCII progress bar string."""
+    if total == 0:
+        return f"[{'?' * width}] ?/?  ?%"
+    pct = done / total
+    filled = int(pct * width)
+    bar = "█" * filled + "░" * (width - filled)
+    return f"[{bar}] {done}/{total}  {pct*100:.1f}%"
+
+
+def _scan_progress(cfg: dict) -> tuple[int, dict, Optional[object]]:
+    """
+    Scan results directory.
+
+    Returns (completed, mean_drops_by_ansatz, dataframe_or_None).
+    """
+    results_dir = cfg.get("output_dir", "./results")
+    pattern = os.path.join(results_dir, "*", "runs.csv")
+    csv_files = sorted(glob.glob(pattern))
+
+    if not csv_files:
+        return 0, {}, None
+
+    if HAS_PANDAS:
+        try:
+            dfs = [pd.read_csv(f) for f in csv_files]
+            df = pd.concat(dfs, ignore_index=True)
+            df = df.drop_duplicates(subset=["run_id"])
+            completed = len(df)
+            drops = {}
+            if "forgetting_drop" in df.columns and "ansatz" in df.columns:
+                drops = (
+                    df.groupby("ansatz")["forgetting_drop"]
+                    .mean()
+                    .to_dict()
+                )
+            return completed, drops, df
+        except Exception:
+            pass
+
+    return len(csv_files), {}, None
+
+
+def _kbhit_nonblock() -> bool:
+    """Return True if a key has been pressed (Unix only, non-blocking)."""
+    if not HAS_TERMIOS:
+        return False
+    import select
+    return select.select([sys.stdin], [], [], 0)[0] != []
+
+
+def show_monitor(cfg: dict):
+    """
+    Live progress monitor. Refreshes every 2 seconds.
+    Press any key (or Enter on non-Unix) to exit.
+    """
+    expected = cfg.get("expected_runs", 0)
+    results_dir = cfg.get("output_dir", "./results")
+    ansatz_labels = cfg.get("labels", {}).get("ansatze", {})
+
+    # Switch terminal to raw mode for non-blocking key detection (Unix only)
+    old_settings = None
+    if HAS_TERMIOS:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+
+    try:
+        while True:
+            clear_screen()
+            print_header(cfg.get("experiment_name", "experiment"))
+            print()
+            print(f"  Results dir : {results_dir}")
+            print(f"  Expected    : {expected} runs")
+            print()
+
+            completed, drops, df = _scan_progress(cfg)
+            bar = _progress_bar(completed, expected)
+            print(f"  Progress  {bar}")
+            print()
+
+            if drops:
+                print("  Mean forgetting drop by ansatz:")
+                for ansatz, val in sorted(drops.items()):
+                    label = ansatz_labels.get(ansatz, ansatz)
+                    print(f"    {label:<25}: {val*100:>6.2f}%")
+                print()
+
+            # Per-phase progress
+            print("  Phase breakdown:")
+            for phase in cfg.get("phases", []):
+                phase_done = 0
+                phase_total = count_lines(phase.get("file", ""))
+                if df is not None and HAS_PANDAS:
+                    try:
+                        phase_filters = phase.get("filters", {})
+                        mask = pd.Series([True] * len(df), index=df.index)
+                        if "noise" in phase_filters:
+                            mask &= df["noise_model"] == phase_filters["noise"]
+                        if "source" in phase_filters:
+                            mask &= df["source"] == phase_filters["source"]
+                        if "ansatz" in phase_filters:
+                            mask &= df["ansatz"] == phase_filters["ansatz"]
+                        phase_done = int(mask.sum())
+                    except Exception:
+                        phase_done = 0
+                pbar = _progress_bar(phase_done, phase_total, width=20)
+                print(f"    [{phase['id']}] {phase['description']:<45} {pbar}")
+            print()
+
+            # SLURM queue
+            squeue = run_cmd(
+                "squeue -u $USER --format='%.10i %.9P %.30j %.8T %.10M' 2>/dev/null",
+                capture=True,
+            )
+            if squeue:
+                lines = squeue.splitlines()
+                active = len(lines) - 1  # subtract header
+                print(f"  Active SLURM jobs: {max(active, 0)}")
+                for line in lines[:6]:   # show up to 5 jobs
+                    print(f"    {line}")
+            else:
+                print("  SLURM queue: not available")
+
+            print()
+            print("  " + "─" * 60)
+            print("  [Press any key to return to the main menu]")
+
+            # Check for keypress
+            if HAS_TERMIOS:
+                if _kbhit_nonblock():
+                    sys.stdin.read(1)   # consume the key
+                    break
+            else:
+                # Fallback: wait 2s then loop — user must Ctrl+C or use menu
+                time.sleep(2)
+                continue
+
+            time.sleep(2)
+
+    finally:
+        if old_settings is not None and HAS_TERMIOS:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Phase submission helpers
+# ---------------------------------------------------------------------------
+
 def refresh_commands(config_path: str, cfg: dict):
-    """Regenerate all phase command files via runner.py --export-commands."""
     print(f"\n[INFO] Regenerating command files from {config_path}...")
     ok = run_cmd(f"python runner.py --config {config_path} --export-commands")
     if ok:
@@ -82,7 +247,6 @@ def refresh_commands(config_path: str, cfg: dict):
 
 
 def submit_phase(phase: dict, dependency_id: Optional[str] = None) -> Optional[str]:
-    """Submit a phase as a SLURM array job."""
     n = count_lines(phase["file"])
     if n == 0:
         print(f"\n[WARN] {phase['file']} is empty or missing. Run [R] first.")
@@ -102,48 +266,7 @@ def submit_phase(phase: dict, dependency_id: Optional[str] = None) -> Optional[s
     return job_id
 
 
-def show_monitor(cfg: dict):
-    """Scan results directory and report progress."""
-    results_dir = cfg.get("output_dir", "./results")
-    expected = cfg.get("expected_runs", 0)
-
-    print(f"\n[MONITOR] Scanning {results_dir}/...")
-    pattern = os.path.join(results_dir, "*", "runs.csv")
-    csv_files = glob.glob(pattern)
-
-    completed = 0
-    if HAS_PANDAS and csv_files:
-        try:
-            dfs = [pd.read_csv(f) for f in csv_files]
-            df = pd.concat(dfs, ignore_index=True)
-            completed = len(df.drop_duplicates(subset=["run_id"]))
-            print(f"\n{'Metric':<25} {'Value':>10}")
-            print("-" * 37)
-            print(f"{'Unique runs completed':<25} {completed:>10}")
-            if "forgetting_drop" in df.columns:
-                mean_drop = df.groupby("ansatz")["forgetting_drop"].mean()
-                print("\nMean forgetting drop by ansatz:")
-                for ansatz, val in mean_drop.items():
-                    label = cfg.get("labels", {}).get("ansatze", {}).get(ansatz, ansatz)
-                    print(f"  {label:<20}: {val*100:>6.1f}%")
-        except Exception as e:
-            print(f"[WARN] {e}")
-            completed = len(csv_files)
-    else:
-        completed = len(csv_files)
-        print(f"Completed run folders: {completed}")
-
-    pct = (completed / expected * 100) if expected > 0 else 0
-    print(f"\nOverall progress: {pct:.1f}% ({completed}/{expected})")
-
-    print("\n--- Active SLURM jobs ---")
-    out = run_cmd("squeue -u $USER --format='%.10i %.9P %.30j %.8T %.10M %.6D' 2>/dev/null", capture=True)
-    print(out or "No active jobs or squeue unavailable.")
-    input("\nEnter to return...")
-
-
 def launch_full_pipeline(cfg: dict):
-    """Submit all phases with sequential SLURM dependencies."""
     phases = cfg.get("phases", [])
     print(f"\n[PIPELINE] Submitting {len(phases)} phases with sequential dependencies...")
     prev_id = None
@@ -158,11 +281,21 @@ def launch_full_pipeline(cfg: dict):
 
 
 def generate_tables(config_path: str):
-    """Run generate_tables.py."""
     print("\n[TABLES] Generating LaTeX tables...")
     run_cmd(f"python generate_tables.py --config {config_path}")
     input("\nEnter to return...")
 
+
+def generate_plots():
+    print("\n[PLOTS] Generating paper figures...")
+    run_cmd("python plots/plot_forgetting_curves.py --out paper/figure2_ansatz_decay.png")
+    run_cmd("python plots/plot_convergence.py --out paper/figure3_convergence.png")
+    input("\nEnter to return...")
+
+
+# ---------------------------------------------------------------------------
+# Main menu
+# ---------------------------------------------------------------------------
 
 def main():
     import argparse
@@ -184,12 +317,13 @@ def main():
         print("  [R]  Refresh command files from config.yaml")
         print()
         for phase in phases:
-            n = count_lines(phase["file"])
+            n = count_lines(phase.get("file", ""))
             print(f"  [{phase['id']}]  {phase['description']}  ({n} tasks)")
         print()
         print("  [F]  Launch FULL PIPELINE (all phases, sequential deps)")
-        print("  [M]  Monitor progress and SLURM queue")
+        print("  [M]  Monitor progress  (live, refreshes every 2s)")
         print("  [T]  Generate LaTeX tables")
+        print("  [P]  Generate paper figures (Figure 2 & 3)")
         print("  [X]  Exit")
         print("-" * 70)
 
@@ -203,6 +337,8 @@ def main():
             show_monitor(cfg)
         elif choice == "T":
             generate_tables(args.config)
+        elif choice == "P":
+            generate_plots()
         elif choice == "X":
             print("\nExiting.\n")
             break
