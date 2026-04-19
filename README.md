@@ -37,10 +37,11 @@ cross-domain-qcl/
 │   └── tables/            # Auto-generated LaTeX tables (from generate_tables.py)
 ├── trainer.py             # QCL training loop: pre-train → Task A → Task B → forgetting
 ├── runner.py              # Experiment orchestrator (generates SLURM command files)
-├── manager.py             # Interactive HUB for Hercules (reads phases from config.yaml)
-├── generate_tables.py     # Generates LaTeX result tables from results/
-├── slurm_generic.sh       # SLURM array template (Hercules-compatible)
-├── deploy.sh              # rsync script to sync to the cluster
+├── core/                  # Hercules HPC framework files
+│   ├── manager.py         # Interactive HUB for Hercules (reads phases from config.yaml)
+│   ├── generate_tables.py # Generates LaTeX result tables from results/
+│   ├── slurm_generic.sh   # SLURM array template (Hercules-compatible)
+│   └── deploy.sh          # rsync script to sync to the cluster
 ├── config.yaml            # Full experiment configuration
 └── requirements.txt
 ```
@@ -63,7 +64,7 @@ python runner.py --config config.yaml \
 
 ```bash
 # 1. Sync to the cluster
-bash deploy.sh
+bash core/deploy.sh
 
 # 2. SSH into Hercules and set up the environment (first time only)
 conda create -n qcl python=3.10 -y
@@ -71,12 +72,20 @@ source activate qcl
 pip install -r requirements.txt
 
 # 3. Launch the HUB
-python manager.py
+python core/manager.py
 # [R] refresh command files
 # [F] launch full pipeline (all 60 runs as SLURM array jobs)
 # [M] monitor progress
 # [T] generate LaTeX tables once complete
 ```
+
+### Run Ablation Study on Hercules
+
+To empirically find the best network topology before a massive benchmark execution:
+```bash
+sbatch core/slurm_ablation.sh
+```
+This deploys the `ablation_study.py` sequentially across different values of `n_qubits` and `n_layers` returning a summary of convergences directly.
 
 The SLURM template uses partition `standard`, 4 CPUs, 16 GB RAM, and 12 h time limit.
 
@@ -92,7 +101,7 @@ All experiment parameters live in `config.yaml`. The relevant sections are:
 - **`phases`** — SLURM job groups with filter rules
 - **`labels`** — LaTeX display names used in generated tables
 
-To adapt this framework for a different paper, create a new `config.yaml` with your own phases and labels, replace `data/loader.py` and `circuits/ansatz.py` with your task-specific code, and keep `manager.py`, `slurm_generic.sh`, and `generate_tables.py` unchanged.
+To adapt this framework for a different paper, create a new `config.yaml` with your own phases and labels, replace `data/loader.py` and `circuits/ansatz.py` with your task-specific code, and keep `core/manager.py`, `core/slurm_generic.sh`, and `core/generate_tables.py` unchanged.
 
 ---
 

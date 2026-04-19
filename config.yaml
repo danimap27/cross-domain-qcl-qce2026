@@ -16,7 +16,7 @@ seeds: [0, 42, 123, 456, 789]
 # QUANTUM CIRCUIT SETTINGS
 # =============================================================
 n_qubits: 4
-n_layers: 2   # used by SEL and BasicEntangler
+n_layers: 4   # used by SEL and BasicEntangler
 
 ansatze:
   - name: "strongly_entangling"
@@ -31,9 +31,9 @@ ansatze:
 # =============================================================
 noise_models:
   - name: "ideal"
-    backend: "default.qubit"
+    backend: "lightning.qubit"
     diff_method: "adjoint"
-    enabled: false
+    enabled: true
 
   - name: "ibm_heron_r2"
     backend: "default.mixed"
@@ -83,10 +83,11 @@ tasks:
 # =============================================================
 training:
   optimizer: "adam"
-  lr: 0.05
+  lr: 0.01
   epochs: 10
   pretrain_epochs: 10
   batch_size: 32
+  freeze_prior: true
 
 # =============================================================
 # SLURM PHASES (read by manager.py)

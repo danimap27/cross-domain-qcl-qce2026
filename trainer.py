@@ -55,6 +55,7 @@ class HybridQCLModel(nn.Module):
     def __init__(self, qnode, weight_shapes: dict, init_params=None):
         super().__init__()
         self.qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
+        # Use 2 measurements to match the original architecture and reduce forgetting
         self.fc = nn.Linear(2, 2)
         if init_params is not None:
             with torch.no_grad():
@@ -63,17 +64,9 @@ class HybridQCLModel(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Parameters
-        ----------
-        x : (batch_size, n_features)
-
-        Returns
-        -------
-        logits : (batch_size, 2)
-        """
-        exp_vals = self.qlayer(x)   # (batch, 2) from PauliZ(0), PauliZ(1)
-        return self.fc(exp_vals)    # (batch, 2) class logits
+        # Input is scaled to [0, pi] in loader.py, pass directly to QLayer
+        exp_vals = self.qlayer(x)   # (batch, 2) 
+        return self.fc(exp_vals.to(torch.float32))    # (batch, 2) class logits
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +121,7 @@ class QCLRunConfig:
     epochs: int = 10
     pretrain_epochs: int = 10
     batch_size: int = 32
+    freeze_prior: bool = True  # If True, freezes layer 0 after pre-training
     data_dir: str = "./data/raw"
     results_dir: str = "./results"
     noise_channels: list = field(
@@ -188,21 +182,21 @@ def run_qcl(cfg: QCLRunConfig) -> QCLResult:
 
     # ── Circuit ────────────────────────────────────────────────────────────────
     from circuits.ansatz import build_circuit, get_weight_shapes
-    from circuits.noise import build_noise_operators
+    from circuits.noise import IBM_HERON_R2
 
     is_noisy = cfg.noise_model != "ideal"
-    backend = "default.mixed" if is_noisy else "default.qubit"
-    diff_method = "backprop"
-    noise_ops = (
-        build_noise_operators(n_qubits=cfg.n_qubits, channels=cfg.noise_channels)
-        if is_noisy else None
-    )
+    # Use fast C++ backend for ideal simulations
+    backend = "default.mixed" if is_noisy else "lightning.qubit"
+    diff_method = "backprop" if is_noisy else "adjoint"
+
+    # Pass the noise dictionary to enable gate-wise error channels
+    noise_params = IBM_HERON_R2 if is_noisy else None
 
     qnode = build_circuit(
         ansatz=cfg.ansatz,
         n_qubits=cfg.n_qubits,
         n_layers=cfg.n_layers,
-        noise_ops=noise_ops,
+        noise_params=noise_params,
         backend=backend,
         diff_method=diff_method,
     )
@@ -268,11 +262,28 @@ def run_qcl(cfg: QCLRunConfig) -> QCLResult:
         acc_source = _evaluate(model, loader_src_te)
         logger.info(f"[{cfg.run_id}] Pre-train (mobilenetv2): acc={acc_source:.4f}")
 
+    # ── Memory Protection Strategy (Freezing) ─────────────────────────────────
+    if cfg.freeze_prior and cfg.source != "scratch":
+        logger.info(f"[{cfg.run_id}] Freezing Layer 0 weights to shield prior knowledge.")
+        for name, param in model.qlayer.named_parameters():
+            # Weights dimension 0 corresponds to the layer index
+            if "weights" in name:
+                # Hook gradient to zero out updates for the first layer (layer 0)
+                def _freeze_hook(grad):
+                    out = grad.clone()
+                    out[0] = 0.0 # Shield prior knowledge in layer 0
+                    return out
+                param.register_hook(_freeze_hook)
+
     # ── Phase 1: Task A ───────────────────────────────────────────────────────
+    # Use lower learning rate if pre-trained weights are present
+    lr_a = cfg.lr if cfg.source == "scratch" else 0.01
+    optimizer_a = torch.optim.Adam(model.parameters(), lr=lr_a)
+    
     loss_history_a: list[float] = []
     t0 = time.time()
     for ep in range(cfg.epochs):
-        loss_history_a.append(_train_epoch(model, loader_a_tr, optimizer, criterion))
+        loss_history_a.append(_train_epoch(model, loader_a_tr, optimizer_a, criterion))
         if (ep + 1) % 5 == 0:
             logger.debug(f"[{cfg.run_id}] Task A ep {ep+1}: loss={loss_history_a[-1]:.4f}")
     train_time_a_s = time.time() - t0
@@ -280,22 +291,25 @@ def run_qcl(cfg: QCLRunConfig) -> QCLResult:
     logger.info(f"[{cfg.run_id}] Task A: acc_init={acc_a_initial:.4f}, t={train_time_a_s:.1f}s")
 
     # ── Phase 2: Task B (sequential, no replay) ───────────────────────────────
+    # Lower learning rate for Task B to mitigate catastrophic forgetting
+    lr_b = 0.005
+    optimizer_b = torch.optim.Adam(model.parameters(), lr=lr_b)
+    
     loss_history_b: list[float] = []
     forgetting_history: list[float] = []   # Task A acc at each Task B epoch
     t0 = time.time()
     for ep in range(cfg.epochs):
-        loss_history_b.append(_train_epoch(model, loader_b_tr, optimizer, criterion))
-        acc_a_ep = _evaluate(model, loader_a_te)
-        forgetting_history.append(acc_a_ep)
+        loss_history_b.append(_train_epoch(model, loader_b_tr, optimizer_b, criterion))
+        # Performance fix: evaluate Task A only at the end instead of every epoch
         if (ep + 1) % 5 == 0:
             logger.debug(
-                f"[{cfg.run_id}] Task B ep {ep+1}: loss={loss_history_b[-1]:.4f} "
-                f"acc_A={acc_a_ep:.4f}"
+                f"[{cfg.run_id}] Task B ep {ep+1}: loss={loss_history_b[-1]:.4f}"
             )
     train_time_b_s = time.time() - t0
 
     acc_b_final = _evaluate(model, loader_b_te)
-    acc_a_final = forgetting_history[-1] if forgetting_history else _evaluate(model, loader_a_te)
+    acc_a_final = _evaluate(model, loader_a_te)
+    forgetting_history.append(acc_a_final)
     forgetting_drop = acc_a_initial - acc_a_final
     logger.info(
         f"[{cfg.run_id}] Done: acc_B={acc_b_final:.4f} "

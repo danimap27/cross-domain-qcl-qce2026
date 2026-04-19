@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/raw/
+results/
+results_test/
+results_test_10pct/
+cmds_*.txt
+*.yaml
+!config.yaml
+parse_results.py

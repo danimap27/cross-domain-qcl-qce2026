@@ -343,7 +343,7 @@ def submit_phase(
         f"sbatch --parsable --job-name='{job_name}' "
         f"--array=1-{n}%30 {dep} "
         f"--export=CMD_FILE={phase['file']},EXTRA_ARGS={overwrite_flag} "
-        f"slurm_generic.sh"
+        f"core/slurm_generic.sh"
     )
     print(f"\n[SUBMIT] {phase['description']} ({n} tasks)...")
     job_id = run_cmd(cmd, capture=True)
@@ -368,7 +368,7 @@ def launch_full_pipeline(cfg: dict, overwrite: bool = False):
 
 def generate_tables(config_path: str):
     print("\n[TABLES] Generating LaTeX tables...")
-    run_cmd(f"python generate_tables.py --config {config_path}")
+    run_cmd(f"python core/generate_tables.py --config {config_path}")
     input("\nEnter to return...")
 
 
