@@ -1,6 +1,6 @@
 # Cross-Domain QCL — Experiment Framework
 
-This repository contains the code and paper for **"Cross-Domain Pre-Training to Mitigate Catastrophic Forgetting in Sequential Variational Quantum Classifiers"**, submitted to QUANTICS 2026 (Porto).
+This repository contains the code and paper for **"Cross-Domain Pre-Training to Mitigate Catastrophic Forgetting in Sequential Variational Quantum Classifiers"**, submitted to IEEE Quantum Week 2026 (QCE26).
 
 The framework was designed to be reusable for other quantum machine learning papers. If you swap `config.yaml` and the task-specific code in `data/` and `circuits/`, you can run a completely different experiment on Hercules without touching the orchestration layer.
 
@@ -32,7 +32,7 @@ cross-domain-qcl/
 │   ├── loader.py          # Fashion-MNIST and MNIST loaders with PCA reduction
 │   └── synthetic.py       # Synthetic Gaussian dataset generator
 ├── paper/
-│   ├── main.tex           # Full paper (LLNCS format)
+│   ├── main.tex           # Full paper (IEEEtran conference format)
 │   ├── references.bib     # Bibliography
 │   └── tables/            # Auto-generated LaTeX tables (from generate_tables.py)
 ├── trainer.py             # QCL training loop: pre-train → Task A → Task B → forgetting
@@ -145,5 +145,5 @@ If you use this framework, please cite the paper:
 ```
 D. Martín-Pérez, F. Rodríguez-Díaz, D. Gutiérrez-Avilés, A. Troncoso, F. Martínez-Álvarez.
 Cross-Domain Pre-Training to Mitigate Catastrophic Forgetting in Sequential Variational Quantum Classifiers.
-QUANTICS 2026, Porto.
+IEEE Quantum Week 2026, QCE26.
 ```

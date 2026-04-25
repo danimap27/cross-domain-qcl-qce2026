@@ -1,4 +1,4 @@
-\documentclass[runningheads]{llncs}
+\documentclass[10pt,conference]{IEEEtran}
 \usepackage[T1]{fontenc}
 \usepackage{graphicx}
 \usepackage{pgfplots}
@@ -11,7 +11,6 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage[hidelinks]{hyperref}
-\usepackage{orcidlink}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{shapes,arrows.meta,positioning,fit}
 
@@ -20,21 +19,36 @@
 \title{Cross-Domain Pre-Training to Mitigate Catastrophic Forgetting
 in Sequential Variational Quantum Classifiers}
 
-\author{D.~Mart\'in-P\'erez\inst{1}\orcidlink{0009-0002-4302-0928} \and
-F.~Rodr\'iguez-D\'iaz\inst{1}\orcidlink{0009-0006-5290-9699} \and
-D.~Guti\'errez-Avil\'es\inst{2} \and
-A.~Troncoso\inst{1}\orcidlink{0000-0002-9801-7999} \and
-F.~Mart\'inez-\`Alvarez\inst{1}\orcidlink{0000-0002-6309-1785}}
-
-\authorrunning{D.~Mart\'in-P\'erez et al.}
-
-\institute{Data Science and Big Data Lab, Pablo de Olavide University,
-  ES-41013 Seville, Spain\\
-  \email{\{dmarper2,froddia,atrolor,fmaralv\}@upo.es}
-  \and
-  Department of Computer Science, University of Seville, Spain}
-
-\maketitle
+\author{
+\IEEEauthorblockN{Daniel Mart\'in-P\'erez}
+\IEEEauthorblockA{\textit{Data Science and Big Data Lab} \\
+\textit{Pablo de Olavide University}\\
+Seville, Spain \\
+dmarper2@upo.es}
+\and
+\IEEEauthorblockN{F. Rodr\'iguez-D\'iaz}
+\IEEEauthorblockA{\textit{Data Science and Big Data Lab} \\
+\textit{Pablo de Olavide University}\\
+Seville, Spain \\
+froddia@upo.es}
+\and
+\IEEEauthorblockN{D. Guti\'errez-Avil\'es}
+\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\textit{University of Seville}\\
+Seville, Spain}
+\and
+\IEEEauthorblockN{A. Troncoso}
+\IEEEauthorblockA{\textit{Data Science and Big Data Lab} \\
+\textit{Pablo de Olavide University}\\
+Seville, Spain \\
+atrolor@upo.es}
+\and
+\IEEEauthorblockN{F. Mart\'inez-\`Alvarez}
+\IEEEauthorblockA{\textit{Data Science and Big Data Lab} \\
+\textit{Pablo de Olavide University}\\
+Seville, Spain \\
+fmaralv@upo.es}
+}
 
 % ============================================================
 \begin{abstract}
@@ -588,7 +602,7 @@ assess scalability beyond the 4-qubit regime, and investigate whether
 structured synthetic sources---such as topological graphs or Fourier
 modes---provide stronger protection than isotropic Gaussian clusters.
 
-\bibliographystyle{splncs04}
+\bibliographystyle{IEEEtran}
 \bibliography{references}
 
 \end{document}

@@ -8,3 +8,10 @@ cmds_*.txt
 *.yaml
 !config.yaml
 parse_results.py
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.pdf
+*.synctex.gz
